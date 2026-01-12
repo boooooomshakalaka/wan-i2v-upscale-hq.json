@@ -24,7 +24,7 @@ RUN python3 -m pip wheel --no-build-isolation --no-deps \
 ##############################
 # Stage 2 — Runtime Image
 ##############################
-FROM runpod/worker-comfyui:latest
+FROM runpod/worker-comfyui:5.1.0-base
 
 ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /comfyui
