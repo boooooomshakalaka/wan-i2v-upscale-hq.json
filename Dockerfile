@@ -1,4 +1,4 @@
-FROM runpod/worker-comfyui:5.5.1
+FROM runpod/worker-comfyui:5.1.0-base
 
 RUN pip install --no-cache-dir triton sageattention insightface onnxruntime-gpu
 
