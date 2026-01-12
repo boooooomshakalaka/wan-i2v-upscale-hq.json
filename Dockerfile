@@ -1,21 +1,8 @@
-FROM runpod/worker-comfyui:5.5.1-base
+FROM runpod/worker-comfyui:5.5.1
 
-RUN pip install --no-cache-dir triton sageattention
+RUN pip install --no-cache-dir triton sageattention insightface onnxruntime-gpu
 
-RUN comfy node install --exit-on-fail comfyui_essentials --mode remote
-
-WORKDIR /comfyui/custom_nodes
-RUN git clone --depth 1 https://github.com/kijai/ComfyUI-KJNodes.git
-RUN git clone --depth 1 https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git
-RUN git clone --depth 1 https://github.com/yolain/ComfyUI-Easy-Use.git
-RUN git clone --depth 1 https://github.com/Fannovel16/ComfyUI-Frame-Interpolation.git
-RUN git clone --depth 1 https://github.com/rgthree/rgthree-comfy.git
-RUN git clone --depth 1 https://github.com/Gourieff/ComfyUI-ReActor.git
-RUN git clone --depth 1 https://github.com/kijai/ComfyUI-WanVideoWrapper.git
-
-WORKDIR /comfyui
-
-RUN rm -rf /comfyui/models && \
-    ln -s /runpod-volume/workspace/runpod-slim/ComfyUI/models /comfyui/models
-
-RUN rm -rf /root/.cache/pip /tmp/*
+# Symlink to your existing network volume setup
+RUN rm -rf /comfyui/models /comfyui/custom_nodes && \
+    ln -s /runpod-volume/workspace/runpod-slim/ComfyUI/models /comfyui/models && \
+    ln -s /runpod-volume/workspace/runpod-slim/ComfyUI/custom_nodes /comfyui/custom_nodes
