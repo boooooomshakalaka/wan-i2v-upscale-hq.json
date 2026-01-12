@@ -1,23 +1,33 @@
-FROM runpod/worker-comfyui:5.1.0-base
+# ---- Custom nodes for your workflow ----
+# Expect ComfyUI already present in the image.
+ARG COMFYUI_DIR=/comfyui
+WORKDIR ${COMFYUI_DIR}
 
-# Install Python dependencies that custom nodes need
-RUN pip install --no-cache-dir \
-    triton \
-    sageattention \
-    insightface \
-    onnxruntime-gpu \
-    opencv-python \
-    scikit-image
+# System deps often needed (video + general build)
+# (If your base image is not Debian/Ubuntu, adjust package manager.)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    ffmpeg \
+    libgl1 \
+    libglib2.0-0 \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
-# Create startup script properly
-COPY <<EOF /start.sh
-#!/bin/bash
-rm -rf /comfyui/models /comfyui/custom_nodes 2>/dev/null || true
-ln -sf /runpod-volume/workspace/runpod-slim/ComfyUI/models /comfyui/models
-ln -sf /runpod-volume/workspace/runpod-slim/ComfyUI/custom_nodes /comfyui/custom_nodes
-exec python -u /rp_handler.py
-EOF
+# Put node repos here
+WORKDIR ${COMFYUI_DIR}/custom_nodes
 
-RUN chmod +x /start.sh
+# Clone the node packs used by your workflow
+RUN git clone --depth 1 https://github.com/kijai/ComfyUI-KJNodes.git comfyui-kjnodes && \
+    git clone --depth 1 https://github.com/yolain/ComfyUI-Easy-Use.git comfyui-easy-use && \
+    git clone --depth 1 https://github.com/rgthree/rgthree-comfy.git rgthree-comfy && \
+    git clone --depth 1 https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git comfyui-videohelpersuite && \
+    git clone --depth 1 https://github.com/Gourieff/ComfyUI-ReActor.git comfyui-reactor && \
+    git clone --depth 1 https://github.com/M1kep/ComfyLiterals.git ComfyLiterals
 
-CMD ["/start.sh"]
+# Install python requirements for every custom node repo that provides one
+# (Robust: doesn't fail if a repo has no requirements.txt)
+RUN python3 -m pip install --upgrade pip && \
+    find . -maxdepth 2 -name requirements.txt -print -exec python3 -m pip install -r {} \;
+
+# Optional: if your base image is slim, these help avoid runtime surprises
+# RUN python3 -m pip install -U setuptools wheel
