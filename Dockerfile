@@ -28,68 +28,43 @@ RUN find . -name requirements.txt -exec pip install --no-cache-dir -r {} \;
 
 WORKDIR /comfyui
 
-# Advanced startup script with network storage support
+# Improved startup script with caching
 RUN printf '%s\n' \
 '#!/usr/bin/env bash' \
 'set -euo pipefail' \
 '' \
-'# Marker files for installation tracking' \
-'SAGE_MARKER_LOCAL="/tmp/.sageattention_installed"' \
-'SAGE_MARKER_NETWORK="/workspace/.sageattention_installed"' \
+'SAGE_MARKER="/tmp/.sageattention_installed"' \
 '' \
-'echo "========================================="' \
-'echo " ComfyUI Serverless Startup"' \
-'echo "========================================="' \
-'' \
-'# Check for GPU' \
 'echo "[startup] Checking for GPU..."' \
 'if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then' \
-'  GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -n1)' \
-'  echo "[startup] ✓ GPU detected: $GPU_NAME"' \
+'  echo "[startup] ✓ GPU detected"' \
 '  ' \
-'  # Determine which marker to use' \
-'  if [ -d "/workspace" ] && [ -w "/workspace" ]; then' \
-'    echo "[startup] ✓ Network storage available at /workspace"' \
-'    SAGE_MARKER="$SAGE_MARKER_NETWORK"' \
-'  else' \
-'    echo "[startup] ⓘ Using local storage for cache"' \
-'    SAGE_MARKER="$SAGE_MARKER_LOCAL"' \
-'  fi' \
-'  ' \
-'  # Install SageAttention if needed' \
+'  # Only install SageAttention if not already installed' \
 '  if [ ! -f "$SAGE_MARKER" ]; then' \
 '    echo "[startup] Installing SageAttention..."' \
-'    START_TIME=$(date +%s)' \
-'    ' \
-'    if pip install --no-cache-dir sageattention 2>&1 | tee /tmp/sage_install.log; then' \
+'    if pip install --no-cache-dir -U sageattention 2>&1 | tee /tmp/sage_install.log; then' \
 '      touch "$SAGE_MARKER"' \
-'      END_TIME=$(date +%s)' \
-'      DURATION=$((END_TIME - START_TIME))' \
-'      echo "[startup] ✓ SageAttention installed in ${DURATION}s"' \
+'      echo "[startup] ✓ SageAttention installed successfully"' \
 '    else' \
-'      echo "[startup] ⚠ SageAttention install failed"' \
-'      echo "[startup] ⚠ Check logs: /tmp/sage_install.log"' \
-'      echo "[startup] ⓘ ComfyUI will start anyway (some nodes may not work)"' \
+'      echo "[startup] ⚠ SageAttention install failed (workflow may still work)"' \
+'      cat /tmp/sage_install.log' \
 '    fi' \
 '  else' \
-'    echo "[startup] ✓ SageAttention already installed (cached)"' \
+'    echo "[startup] ✓ SageAttention already installed"' \
 '  fi' \
 '  ' \
 '  # Verify installation' \
-'  if python -c "import sageattention; print(\"  Version:\", sageattention.__version__)" 2>/dev/null; then' \
+'  if python -c "import sageattention" 2>/dev/null; then' \
 '    echo "[startup] ✓ SageAttention import successful"' \
 '  else' \
 '    echo "[startup] ⚠ SageAttention import failed"' \
 '  fi' \
 'else' \
-'  echo "[startup] ⓘ No GPU detected"' \
-'  echo "[startup] ⓘ This is normal for build/test environments"' \
-'  echo "[startup] ⓘ SageAttention will be installed on first GPU run"' \
+'  echo "[startup] ⓘ No GPU detected (build/test environment)"' \
+'  echo "[startup] ⓘ Skipping SageAttention install"' \
 'fi' \
 '' \
-'echo "========================================="' \
-'echo " Starting ComfyUI on port 8188"' \
-'echo "========================================="' \
+'echo "[startup] Starting ComfyUI..."' \
 'exec python -u main.py --listen 0.0.0.0 --port 8188' \
 > /start.sh && chmod +x /start.sh
 
