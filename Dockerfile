@@ -1,54 +1,95 @@
-# Multi-stage build for SageAttention
+```dockerfile
+# =========================
 # Stage 1: Build SageAttention wheel
-FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS sage_build
+# =========================
+FROM nvidia/cuda:12.8.0-devel-ubuntu22.04 AS builder
 
-# Prevent interactive prompts during package installation
-ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    TORCH_CUDA_ARCH_LIST="7.0;7.5;8.0;8.6;8.9;9.0;12.0" \
+    FORCE_CUDA=1 \
+    MAX_JOBS=4
 
-# Install essential build tools and Python
+# Build deps
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.10 \
     python3.10-dev \
     python3-pip \
     git \
     build-essential \
+    cmake \
     ninja-build \
+    wget \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Upgrade pip and install build tools
-RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel
+# Make python/python3 available
+RUN ln -sf /usr/bin/python3.10 /usr/bin/python && \
+    ln -sf /usr/bin/python3.10 /usr/bin/python3
 
-# Install PyTorch first (required for building SageAttention)
-RUN pip3 install --no-cache-dir \
-    torch==2.4.0 \
-    torchvision==0.19.0 \
-    --index-url https://download.pytorch.org/whl/cu124
+# Pip tooling
+RUN python -m pip install --no-cache-dir --upgrade \
+    pip setuptools wheel packaging ninja
 
-# Install packaging tools needed for SageAttention build
-RUN pip3 install --no-cache-dir packaging ninja
+# PyTorch (CUDA 12.8)
+# If this ever fails with "no matching distribution", switch to nightly/cu128.
+RUN pip install --no-cache-dir \
+    torch torchvision torchaudio \
+    --index-url https://download.pytorch.org/whl/cu128
 
-# Clone and build SageAttention
+# Build SageAttention
 WORKDIR /build
-RUN git clone https://github.com/thu-ml/SageAttention.git && \
+RUN git clone --depth 1 https://github.com/thu-ml/SageAttention.git && \
     cd SageAttention && \
-    pip3 wheel --no-deps -w /wheels .
+    pip wheel --no-build-isolation --verbose --no-deps -w /wheels .
 
-# Stage 2: Final runtime image
+# Verify wheel exists
+RUN ls -lah /wheels/ && \
+    test -f /wheels/*.whl || (echo "ERROR: SageAttention wheel not found!" && exit 1)
+
+
+# =========================
+# Stage 2: Runtime image (RunPod ComfyUI worker)
+# =========================
 FROM runpod/worker-comfyui:5.1.0-base
 
-# Install the pre-built SageAttention wheel
-COPY --from=sage_build /wheels/*.whl /tmp/
-RUN pip install --no-cache-dir /tmp/*.whl && rm -rf /tmp/*.whl
+ENV PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive
 
-# Set working directory
+# Runtime deps (video + OpenCV safety + healthcheck)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install SageAttention wheel
+COPY --from=builder /wheels/*.whl /tmp/wheels/
+RUN pip install --no-cache-dir /tmp/wheels/*.whl && \
+    rm -rf /tmp/wheels
+
+# Verify SageAttention import
+RUN python -c "import sageattention; print('SageAttention successfully installed')"
+
+# ---- Custom nodes required by your workflow ----
+WORKDIR /comfyui/custom_nodes
+RUN git clone --depth 1 https://github.com/kijai/ComfyUI-KJNodes.git && \
+    git clone --depth 1 https://github.com/yolain/ComfyUI-Easy-Use.git && \
+    git clone --depth 1 https://github.com/rgthree/rgthree-comfy.git && \
+    git clone --depth 1 https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git && \
+    git clone --depth 1 https://github.com/Gourieff/ComfyUI-ReActor.git && \
+    git clone --depth 1 https://github.com/M1kep/ComfyLiterals.git
+
+# Install python deps for custom nodes
+RUN find . -name requirements.txt -exec pip install --no-cache-dir -r {} \;
+
 WORKDIR /comfyui
-
-# Expose ComfyUI port
 EXPOSE 8188
 
-# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8188/ || exit 1
 
-# Start ComfyUI
 CMD ["python", "-u", "main.py", "--listen", "0.0.0.0", "--port", "8188"]
+```
