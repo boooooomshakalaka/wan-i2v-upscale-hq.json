@@ -1,9 +1,12 @@
-# ---- Custom nodes + SageAttention ----
+# ✅ MUST have a base image
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+
 ARG COMFYUI_DIR=/comfyui
 WORKDIR ${COMFYUI_DIR}
 
-# OS deps: video + common runtime libs + build toolchain for CUDA extensions
+# Basic runtime + build tooling for CUDA extensions (SageAttention)
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip \
     git \
     ffmpeg \
     libgl1 \
@@ -13,14 +16,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ninja-build \
     && rm -rf /var/lib/apt/lists/*
 
-# (Optional but often helpful) ensure pip tooling is up to date
 RUN python3 -m pip install --upgrade pip setuptools wheel
 
-# ---- Install SageAttention (builds CUDA extension) ----
-# Builds against the torch/cuda in your image.
-# Official repo: thu-ml/SageAttention
-RUN python3 -m pip install -U "git+https://github.com/thu-ml/SageAttention.git"  \
-    && python3 -m pip show sageattention || true
+# --- Install ComfyUI itself (if your base image doesn't already include it) ---
+# If your base image already has ComfyUI, REMOVE this block.
+RUN git clone --depth 1 https://github.com/comfyanonymous/ComfyUI.git ${COMFYUI_DIR}
+
+# ---- Install Torch (you may need to pin this to your chosen CUDA build) ----
+# If your base image already has torch with CUDA, REMOVE this block.
+RUN python3 -m pip install --index-url https://download.pytorch.org/whl/cu121 torch torchvision torchaudio
+
+# ---- SageAttention (builds CUDA extension) ----
+RUN python3 -m pip install -U "git+https://github.com/thu-ml/SageAttention.git"
 
 # ---- Custom nodes used by your workflow ----
 WORKDIR ${COMFYUI_DIR}/custom_nodes
@@ -31,5 +38,8 @@ RUN git clone --depth 1 https://github.com/kijai/ComfyUI-KJNodes.git comfyui-kjn
     git clone --depth 1 https://github.com/Gourieff/ComfyUI-ReActor.git comfyui-reactor && \
     git clone --depth 1 https://github.com/M1kep/ComfyLiterals.git ComfyLiterals
 
-# Install python requirements for nodes that provide requirements.txt
 RUN find . -maxdepth 2 -name requirements.txt -print -exec python3 -m pip install -r {} \;
+
+# Default command (adjust to your serverless entrypoint/handler if needed)
+WORKDIR ${COMFYUI_DIR}
+CMD ["python3", "main.py", "--listen", "0.0.0.0", "--port", "8188", "--use-sage-attention"]
