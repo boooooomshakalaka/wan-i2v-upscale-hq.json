@@ -2,13 +2,21 @@
 # Stage 1 — Build SageAttention
 ##############################
 FROM nvidia/cuda:12.8.0-devel-ubuntu22.04 AS sage_build
-
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y \
-    python3 python3-pip git \
-    build-essential cmake ninja-build \
-    && rm -rf /var/lib/apt/lists/*
+RUN set -eux; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*; \
+    apt-get update --allow-releaseinfo-change \
+      -o Acquire::Retries=5 \
+      -o Acquire::http::Timeout="30" \
+      -o Acquire::https::Timeout="30"; \
+    apt-get install -y --no-install-recommends \
+      ca-certificates curl gnupg \
+      python3 python3-pip git \
+      build-essential cmake ninja-build; \
+    rm -rf /var/lib/apt/lists/*
+
 
 RUN python3 -m pip install --upgrade pip setuptools wheel
 
